@@ -7,5 +7,6 @@ server1c_install_ubuntu.sh - автоматическая установка с�
 
 В скриптах нужно указать свой логин и пароль на сайт 1с
 
-export ONEC_USERNAME=user1c
-export ONEC_PASSWORD=pass1c
+>export ONEC_USERNAME=user1c
+
+>export ONEC_PASSWORD=pass1c
