@@ -11,3 +11,5 @@ server1c_install_ubuntu.sh - автоматическая установка с�
 >export ONEC_USERNAME=user1c
 
 >export ONEC_PASSWORD=pass1c
+
+Тестировал на Ubuntu 20.04 и 22.04
