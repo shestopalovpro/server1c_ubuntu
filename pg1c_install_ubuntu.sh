@@ -60,7 +60,7 @@ mv /etc/postgresql/14/main/pg_hba.conf /etc/postgresql/14/main/pg_hba_backup.con
 
 touch /etc/postgresql/14/main/pg_hba.conf
 
-# echo "# IPv4 LAN connections:" >> /etc/postgresql/14/main/pg_hba.conf 
+
 echo "local   all             postgres                             trust" >> /etc/postgresql/14/main/pg_hba.conf
 echo "local   all             all                                  md5" >> /etc/postgresql/14/main/pg_hba.conf
 echo "host    all             all             0.0.0.0/0            md5" >> /etc/postgresql/14/main/pg_hba.conf
