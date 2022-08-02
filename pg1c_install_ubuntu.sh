@@ -1,6 +1,6 @@
 # Укажите логин и пароль на сайт 1с
-export ONEC_USERNAME=user1c
-export ONEC_PASSWORD=pass1c
+export ONEC_USERNAME=$1
+export ONEC_PASSWORD=$2
 
 sudo apt update && sudo apt upgrade -y
 
