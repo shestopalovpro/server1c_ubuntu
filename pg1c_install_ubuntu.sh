@@ -11,7 +11,7 @@ sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg
 apt -y install gnupg2
 wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
 
-apt update
+#apt update
 
 # Устанавливаем локаль
 locale-gen en_US.UTF-8 ru_RU.UTF-8
@@ -21,8 +21,8 @@ update-locale LANG=ru_RU.UTF-8
 timedatectl set-timezone Asia/Irkutsk
 
 
-#apt -y install postgresql-client-common postgresql-common libxslt1.1 ssl-cert libllvm6.0
-apt -y install libxslt1.1 ssl-cert libllvm6.0
+apt -y install postgresql-client-common postgresql-common libxslt1.1 ssl-cert libllvm6.0
+
 
 wget http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.0.0_1.0.2g-1ubuntu4.20_amd64.deb
 dpkg -i libssl1.0.0_1.0.2g-1ubuntu4.20_amd64.deb
@@ -41,17 +41,21 @@ wget https://github.com/v8platform/oneget/releases/download/v0.5.2/oneget_Linux_
 
 tar xfz oneget_Linux_x86_64.tar.gz
 
-./oneget get --path ./tmp/dist/ pg:deb.x64@14.1-2.1C
+./oneget get --path ./tmp/dist/ pg:deb.x64@$3
 
-cd ~/tmp/dist/addcomppostgre/14.1-2.1c
+ph=$(echo "$3" | tr 'C' 'c')
 
-tar xjf postgresql_14.1_2.1C_amd64_deb.tar.bz2
+cd ~/tmp/dist/addcomppostgre/$ph
 
-cd postgresql-14.1-2.1C_amd64_deb
+ph2=$(echo "$3" | tr '-' '_')
 
-apt -y install ./libpq5_14.1-2.1C_amd64.deb
-apt -y install ./postgresql-14_14.1-2.1C_amd64.deb
-apt -y install ./postgresql-client-14_14.1-2.1C_amd64.deb
+tar xjf postgresql_${ph2}_amd64_deb.tar.bz2
+
+cd postgresql-${3}_amd64_deb
+
+apt -y install ./libpq5_$3_amd64.deb
+apt -y install ./postgresql-14_$3_amd64.deb
+apt -y install ./postgresql-client-14_$3_amd64.deb
 
 echo "listen_addresses = '*'" >> /etc/postgresql/14/main/postgresql.conf
 # Если оставить scram-sha-256, то при подключении ловим ошибку аутентификации
