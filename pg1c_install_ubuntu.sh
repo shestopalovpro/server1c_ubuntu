@@ -53,6 +53,8 @@ tar xjf postgresql_${ph2}_amd64_deb.tar.bz2
 
 cd postgresql-${3}_amd64_deb
 
+rm /etc/apt/sources.list.d/pgdg.list
+
 apt -y install ./libpq5_$3_amd64.deb
 apt -y install ./postgresql-14_$3_amd64.deb
 apt -y install ./postgresql-client-14_$3_amd64.deb

@@ -31,10 +31,12 @@ tar xfz oneget_Linux_x86_64.tar.gz
 
 cd ~/tmp/dist/platform83/$3
 
+# Меняем точки на нижнее подчеркивание в версии сервера 1с, чтобы правильно сформировать имя архива
 ph=$(echo "$3" | tr '.' '_')
 
 tar xfz deb64_$ph.tar.gz
 
+# Установка пакетов 1С сервера
 dpkg -i 1c-enterprise-*-common_*_amd64.deb
 dpkg -i 1c-enterprise-*-server_*_amd64.deb
 dpkg -i 1c-enterprise-*-ws_*_amd64.deb
