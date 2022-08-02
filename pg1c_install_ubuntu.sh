@@ -1,3 +1,4 @@
+#!/bin/bash
 # Укажите логин и пароль на сайт 1с
 export ONEC_USERNAME=$1
 export ONEC_PASSWORD=$2
