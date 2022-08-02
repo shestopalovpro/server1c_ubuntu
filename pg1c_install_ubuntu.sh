@@ -21,8 +21,8 @@ update-locale LANG=ru_RU.UTF-8
 timedatectl set-timezone Asia/Irkutsk
 
 
-apt -y install postgresql-client-common postgresql-common libxslt1.1 ssl-cert libllvm6.0
-
+#apt -y install postgresql-client-common postgresql-common libxslt1.1 ssl-cert libllvm6.0
+apt -y install libxslt1.1 ssl-cert libllvm6.0
 
 wget http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.0.0_1.0.2g-1ubuntu4.20_amd64.deb
 dpkg -i libssl1.0.0_1.0.2g-1ubuntu4.20_amd64.deb
@@ -67,8 +67,3 @@ echo "local   all             all                                  md5" >> /etc/
 echo "host    all             all             0.0.0.0/0            md5" >> /etc/postgresql/14/main/pg_hba.conf
 
 service postgresql restart
-
-# Смена пароля
-#su - postgres
-#psql
-#ALTER USER postgres WITH PASSWORD 'xxx87408740xxx';
