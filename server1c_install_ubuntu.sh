@@ -49,4 +49,4 @@ update-rc.d srv1cv83 defaults
 
 service srv1cv83 start
 
-rm ./tmp
+rm -R ./tmp

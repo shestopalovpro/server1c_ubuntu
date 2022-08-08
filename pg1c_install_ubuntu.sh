@@ -74,4 +74,4 @@ echo "host    all             all             0.0.0.0/0            md5" >> /etc/
 
 service postgresql restart
 
-rm ./tmp
+rm -R ./tmp
