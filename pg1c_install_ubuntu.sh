@@ -45,7 +45,7 @@ tar xfz oneget_Linux_x86_64.tar.gz
 
 ph=$(echo "$3" | tr 'C' 'c')
 
-cd ~/tmp/dist/addcomppostgre/$ph
+cd ./tmp/dist/addcomppostgre/$ph
 
 ph2=$(echo "$3" | tr '-' '_')
 

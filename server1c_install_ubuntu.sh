@@ -29,7 +29,7 @@ tar xfz oneget_Linux_x86_64.tar.gz
 
 ./oneget get --path ./tmp/dist/ platform:deb.server.x64@$3
 
-cd ~/tmp/dist/platform83/$3
+cd ./tmp/dist/platform83/$3
 
 # Меняем точки на нижнее подчеркивание в версии сервера 1с, чтобы правильно сформировать имя архива
 ph=$(echo "$3" | tr '.' '_')
