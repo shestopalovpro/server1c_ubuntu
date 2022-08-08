@@ -73,3 +73,5 @@ echo "local   all             all                                  md5" >> /etc/
 echo "host    all             all             0.0.0.0/0            md5" >> /etc/postgresql/14/main/pg_hba.conf
 
 service postgresql restart
+
+rm ./tmp

@@ -48,3 +48,5 @@ cp /opt/1cv8/x86_64/$3/srv1cv83.conf /etc/default/srv1cv83
 update-rc.d srv1cv83 defaults
 
 service srv1cv83 start
+
+rm ./tmp
