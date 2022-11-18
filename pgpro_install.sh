@@ -1,6 +1,3 @@
-locale-gen ru_RU.UTF-8
-localectl set-locale LANG=ru_RU.UTF-8 LC_TIME=ru_RU.UTF-8 LC_COLLATE=ru_RU.UTF-8
-
 wget https://repo.postgrespro.ru/pg1c-14/keys/pgpro-repo-add.sh
 sh pgpro-repo-add.sh
 
@@ -8,6 +5,9 @@ apt-get install postgrespro-1c-14 postgrespro-1c-14-dev -y
 
 mkdir -p /data/postgres/
 chown -R postgres. /data
+
+locale-gen ru_RU.UTF-8
+localectl set-locale LANG=ru_RU.UTF-8 LC_TIME=ru_RU.UTF-8 LC_COLLATE=ru_RU.UTF-8
 
 # очищаем дефолтные настройки
 rm -f /etc/default/postgrespro-1c-14
