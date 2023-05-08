@@ -1,4 +1,4 @@
-wget https://repo.postgrespro.ru/pg1c-15/keys/pgpro-repo-add.sh
+wget https://repo.postgrespro.ru/1c-15/keys/pgpro-repo-add.sh
 sh pgpro-repo-add.sh
 
 apt-get install postgrespro-1c-15 postgrespro-1c-15-dev -y
