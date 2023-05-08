@@ -3,7 +3,7 @@ sh pgpro-repo-add.sh
 
 apt-get install postgrespro-1c-14 postgrespro-1c-14-dev -y
 
-#Добавляем нужную локаль для 1С
+#Добавляем нужную локаль для 1С (обязательно, иначе поймаем ошибку локали в 1С)
 locale-gen ru_RU.UTF-8
 localectl set-locale LANG=ru_RU.UTF-8 LC_TIME=ru_RU.UTF-8 LC_COLLATE=ru_RU.UTF-8
 update-locale LANG=ru_RU.UTF-8
