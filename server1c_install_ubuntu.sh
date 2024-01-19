@@ -30,7 +30,7 @@ sudo apt -y install libgsf-bin
 sudo apt -y install t1utils
 
 
-wget https://github.com/v8platform/oneget/releases/download/v0.5.3/oneget_Linux_x86_64.tar.gz
+wget https://github.com/v8platform/oneget/releases/download/v0.6.0/oneget_Linux_x86_64.tar.gz
 
 tar xfz oneget_Linux_x86_64.tar.gz
 
