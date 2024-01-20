@@ -13,6 +13,7 @@ read version
 sudo apt update && sudo apt upgrade -y
 
 # Устанавливаем локаль
+apt -y install locales
 locale-gen en_US.UTF-8 ru_RU.UTF-8
 update-locale LANG=ru_RU.UTF-8
 
