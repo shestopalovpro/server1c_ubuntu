@@ -21,3 +21,4 @@ rm -f /etc/default/postgrespro-1c-15
 /opt/pgpro/1c-15/bin/pg-setup initdb -D /data/postgres/ --locale=ru_RU.UTF-8 
 # Стартуем
 systemctl start postgrespro-1c-15
+systemctl enable postgrespro-1c-15
