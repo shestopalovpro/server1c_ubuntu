@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright (c) 2025 Sergey Shestopalov
+
 set -e
 
 # === Настройки ===
