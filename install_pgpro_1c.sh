@@ -1,5 +1,4 @@
 #!/bin/bash
-# Licensed under the MIT License
 # Copyright (c) 2025 Sergey Shestopalov
 set -e
 
