@@ -44,6 +44,11 @@ echo "💾 Хранилище архивов: $ARCHIVE_STORAGE"
 echo "📦 Хранилище пакетов: $PACKAGE_STORAGE"
 echo
 
+# === Создание папок для хранения (всегда) ===
+echo "📁 Создаю папки для хранения..."
+sudo mkdir -p "$ARCHIVE_STORAGE" "$PACKAGE_STORAGE"
+sudo chown -R $USER:$USER "$ARCHIVE_STORAGE" "$PACKAGE_STORAGE"
+
 # === Проверяем, установлена ли 1С ===
 IS_FIRST_INSTALL=false
 if [ -d /opt/1cv8/x86_64 ]; then
@@ -60,9 +65,6 @@ fi
 if [ "$IS_FIRST_INSTALL" = true ] || [ "$FORCE_SETUP" = true ]; then
     echo "🔧 Выполняю первоначальную настройку системы..."
     
-    # === Создание папок для хранения ===
-    mkdir -p "$ARCHIVE_STORAGE" "$PACKAGE_STORAGE"
-
     # === Обновление системы ===
     sudo apt update && sudo apt upgrade -y
 
@@ -133,7 +135,15 @@ ARCHIVE_NAME="1c_server_$(date +%Y%m%d_%H%M%S).zip"
 ARCHIVE_PATH="$ARCHIVE_STORAGE/$ARCHIVE_NAME"
 
 wget -q -O "$ARCHIVE_PATH" "$DOWNLOAD_URL"
+
+# Проверяем, что архив скачался
+if [ ! -f "$ARCHIVE_PATH" ]; then
+    echo "❌ Ошибка: архив не скачался или не сохранился в $ARCHIVE_PATH"
+    exit 1
+fi
+
 echo "✅ Архив сохранен: $ARCHIVE_PATH"
+echo "📏 Размер архива: $(du -h "$ARCHIVE_PATH" | cut -f1)"
 
 # === Анализ содержимого архива ===
 echo "🔍 Анализ содержимого архива..."
