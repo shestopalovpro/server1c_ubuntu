@@ -55,7 +55,7 @@
 
 Скачай скрипт и сделай исполняемым:
 
-`wget -O install_1c_server.sh https://your-repo/install_1c_server.sh`
+`wget -O install_1c_server.sh https://github.com/shestopalovpro/server1c_ubuntu/install_1c_server.sh`
 
 `chmod +x install_1c_server.sh`
 
@@ -174,40 +174,32 @@
 
 ### 🚀 Установка и использование
 
-#### 1\. Клонируйте репозиторий:
+#### 1\. Скачайте скрипт:  
 
-  
+`wget -O install_1c_server.sh https://github.com/shestopalovpro/server1c_ubuntu/install_pgpro_1c.sh`
 
-`git clone https://github.com/your-org/postgrespro-1c-installer.git cd postgrespro-1c-installer`
-
-#### 2\. Сделайте скрипт исполняемым:
-
-  
+#### 2\. Сделайте скрипт исполняемым:  
 
 `chmod +x install_pgpro_1c.sh`
 
 #### 3\. Запустите установку:
 
-*   **Интерактивно (с выбором версии):**
-    
+*   **Интерактивно (с выбором версии):**    
       
     
     `sudo ./install_pgpro_1c.sh`
     
-*   **С указанием версии:**
-    
+*   **С указанием версии:**    
       
     
     `sudo ./install_pgpro_1c.sh 16`
     
-*   **С указанием версии и каталога данных:**
-    
+*   **С указанием версии и каталога данных:**    
       
     
     `sudo ./install_pgpro_1c.sh 17 --data-dir /mnt/pgdata`
     
-*   **Показать справку:**
-    
+*   **Показать справку:**    
       
     
     `./install_pgpro_1c.sh --help`
