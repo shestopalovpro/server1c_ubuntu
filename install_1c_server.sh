@@ -15,6 +15,7 @@ exec > >(tee -a "$LOGFILE") 2>&1
 # === Парсинг аргументов ===
 TIMEZONE_PARAM=""
 KEEP_ARCHIVE=false
+FORCE_SETUP=false
 for arg in "$@"; do
     case $arg in
         --timezone=*)
@@ -23,10 +24,14 @@ for arg in "$@"; do
         --keep-archive)
             KEEP_ARCHIVE=true
             ;;
+        --force-setup)
+            FORCE_SETUP=true
+            ;;
         -h|--help)
-            echo "Использование: $0 [--timezone=<zone>] [--keep-archive]"
+            echo "Использование: $0 [--timezone=<zone>] [--keep-archive] [--force-setup]"
             echo "  --timezone=<zone>    Установка часового пояса (пример: Asia/Irkutsk)"
             echo "  --keep-archive       Сохранить скачанный архив и пакеты"
+            echo "  --force-setup        Принудительно выполнить настройку системы"
             echo "  -h, --help          Показать эту справку"
             exit 0
             ;;
@@ -39,63 +44,84 @@ echo "💾 Хранилище архивов: $ARCHIVE_STORAGE"
 echo "📦 Хранилище пакетов: $PACKAGE_STORAGE"
 echo
 
-# === Создание папок для хранения ===
-mkdir -p "$ARCHIVE_STORAGE" "$PACKAGE_STORAGE"
-
-# === Обновление системы ===
-sudo apt update && sudo apt upgrade -y
-
-# === Установка локали ===
-sudo apt -y install locales
-sudo locale-gen en_US.UTF-8 ru_RU.UTF-8
-sudo update-locale LANG=ru_RU.UTF-8
-
-# === Настройка часового пояса ===
-echo "🕒 Настройка часового пояса..."
-CURRENT_TZ=$(timedatectl show -p Timezone --value)
-
-if [ -n "$TIMEZONE_PARAM" ]; then
-    NEW_TZ="$TIMEZONE_PARAM"
-    echo "Используется часовой пояс из параметра: $NEW_TZ"
+# === Проверяем, установлена ли 1С ===
+IS_FIRST_INSTALL=false
+if [ -d /opt/1cv8/x86_64 ]; then
+    CURRENT_VERSION=$(ls /opt/1cv8/x86_64 | sort -V | tail -n1)
+    echo "💡 Текущая установленная версия: $CURRENT_VERSION"
+    IS_FIRST_INSTALL=false
 else
-    echo "Текущий часовой пояс: $CURRENT_TZ"
-    echo
-    echo "Выберите новый часовой пояс или оставьте текущий:"
-    PS3="Введите номер варианта: "
-    options=(
-        "Оставить текущий ($CURRENT_TZ)"
-        "Europe/Moscow"
-        "Asia/Yekaterinburg"
-        "Asia/Novosibirsk"
-        "Asia/Irkutsk"
-        "Asia/Vladivostok"
-        "Asia/Krasnoyarsk"
-        "Указать вручную"
-    )
-    select opt in "${options[@]}"; do
-        case $REPLY in
-            1)
-                NEW_TZ="$CURRENT_TZ"; break;;
-            2|3|4|5|6|7)
-                NEW_TZ="$opt"; break;;
-            8)
-                read -rp "Введите свой часовой пояс (например, Europe/Samara): " NEW_TZ; break;;
-            *)
-                echo "❌ Неверный выбор, попробуйте снова.";;
-        esac
-    done
+    CURRENT_VERSION="0.0.0.0"
+    echo "ℹ️  1С не установлена, будет выполнена чистая установка."
+    IS_FIRST_INSTALL=true
 fi
 
-echo "⏳ Устанавливаю часовой пояс: $NEW_TZ"
-sudo timedatectl set-timezone "$NEW_TZ"
-echo "✅ Часовой пояс установлен: $(timedatectl show -p Timezone --value)"
-echo
+# === Настройка системы только при первой установке или принудительно ===
+if [ "$IS_FIRST_INSTALL" = true ] || [ "$FORCE_SETUP" = true ]; then
+    echo "🔧 Выполняю первоначальную настройку системы..."
+    
+    # === Создание папок для хранения ===
+    mkdir -p "$ARCHIVE_STORAGE" "$PACKAGE_STORAGE"
 
-# === Предотвращаем EULA popup ===
-echo msttcorefonts msttcorefonts/accepted-mscorefonts-eula select true | sudo debconf-set-selections
+    # === Обновление системы ===
+    sudo apt update && sudo apt upgrade -y
 
-# === Установка зависимостей ===
-sudo apt -y install ttf-mscorefonts-installer imagemagick unixodbc libgsf-bin t1utils unzip wget
+    # === Установка локали ===
+    sudo apt -y install locales
+    sudo locale-gen en_US.UTF-8 ru_RU.UTF-8
+    sudo update-locale LANG=ru_RU.UTF-8
+
+    # === Настройка часового пояса ===
+    echo "🕒 Настройка часового пояса..."
+    CURRENT_TZ=$(timedatectl show -p Timezone --value)
+
+    if [ -n "$TIMEZONE_PARAM" ]; then
+        NEW_TZ="$TIMEZONE_PARAM"
+        echo "Используется часовой пояс из параметра: $NEW_TZ"
+    else
+        echo "Текущий часовой пояс: $CURRENT_TZ"
+        echo
+        echo "Выберите новый часовой пояс или оставьте текущий:"
+        PS3="Введите номер варианта: "
+        options=(
+            "Оставить текущий ($CURRENT_TZ)"
+            "Europe/Moscow"
+            "Asia/Yekaterinburg"
+            "Asia/Novosibirsk"
+            "Asia/Irkutsk"
+            "Asia/Vladivostok"
+            "Asia/Krasnoyarsk"
+            "Указать вручную"
+        )
+        select opt in "${options[@]}"; do
+            case $REPLY in
+                1)
+                    NEW_TZ="$CURRENT_TZ"; break;;
+                2|3|4|5|6|7)
+                    NEW_TZ="$opt"; break;;
+                8)
+                    read -rp "Введите свой часовой пояс (например, Europe/Samara): " NEW_TZ; break;;
+                *)
+                    echo "❌ Неверный выбор, попробуйте снова.";;
+            esac
+        done
+    fi
+
+    echo "⏳ Устанавливаю часовой пояс: $NEW_TZ"
+    sudo timedatectl set-timezone "$NEW_TZ"
+    echo "✅ Часовой пояс установлен: $(timedatectl show -p Timezone --value)"
+    echo
+
+    # === Предотвращаем EULA popup ===
+    echo msttcorefonts msttcorefonts/accepted-mscorefonts-eula select true | sudo debconf-set-selections
+
+    # === Установка зависимостей ===
+    sudo apt -y install ttf-mscorefonts-installer imagemagick unixodbc libgsf-bin t1utils unzip wget
+
+else
+    echo "🔧 Пропускаю настройку системы (уже установлена 1С)"
+    echo "ℹ️  Для принудительной настройки используйте --force-setup"
+fi
 
 # === Работаем в рабочей директории ===
 mkdir -p "$WORKDIR"
@@ -137,15 +163,6 @@ fi
 
 echo "🔍 Найдена версия для установки: $NEW_VERSION"
 
-# === Проверяем, установлена ли 1С ===
-if [ -d /opt/1cv8/x86_64 ]; then
-    CURRENT_VERSION=$(ls /opt/1cv8/x86_64 | sort -V | tail -n1)
-    echo "💡 Текущая установленная версия: $CURRENT_VERSION"
-else
-    CURRENT_VERSION="0.0.0.0"
-    echo "ℹ️  1С не установлена, будет выполнена чистая установка."
-fi
-
 # === Функция сравнения версий ===
 vercmp() {
     [ "$1" = "$2" ] && return 0
@@ -166,9 +183,17 @@ cmp_result=$?
 
 if [ "$cmp_result" -eq 0 ]; then
     echo "✅ Установлена та же версия ($CURRENT_VERSION). Обновление не требуется."
+    # Удаляем временный архив если не требуется сохранять
+    if [ "$KEEP_ARCHIVE" = false ]; then
+        rm -f "$ARCHIVE_PATH"
+    fi
     exit 0
 elif [ "$cmp_result" -eq 2 ]; then
     echo "✅ Установлена более новая версия ($CURRENT_VERSION). Обновление не требуется."
+    # Удаляем временный архив если не требуется сохранять
+    if [ "$KEEP_ARCHIVE" = false ]; then
+        rm -f "$ARCHIVE_PATH"
+    fi
     exit 0
 else
     echo "⬇️  Будет установлена новая версия: $NEW_VERSION (старше чем $CURRENT_VERSION)"
@@ -204,7 +229,7 @@ echo "$DEB_PACKAGES" | while read package; do
 done
 
 # === Останавливаем старую службу ===
-if systemctl list-units --full -all | grep -q "srv1cv8-${CURRENT_VERSION}@default.service"; then
+if [ "$IS_FIRST_INSTALL" = false ] && systemctl list-units --full -all | grep -q "srv1cv8-${CURRENT_VERSION}@default.service"; then
     echo "⏹ Останавливаю текущую службу 1С..."
     sudo systemctl stop "srv1cv8-${CURRENT_VERSION}@default.service" || true
     sudo systemctl disable "srv1cv8-${CURRENT_VERSION}@default.service" || true
