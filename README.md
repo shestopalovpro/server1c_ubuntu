@@ -122,7 +122,7 @@ _Для production использования рекомендуется пре�
 
 #### 1\. Скачайте скрипт:  
 
-`wget -O install_1c_server.sh https://github.com/shestopalovpro/server1c_ubuntu/releases/download/publish/install_pgpro_1c.sh`
+`wget -O install_pgpro_1c.sh https://github.com/shestopalovpro/server1c_ubuntu/releases/download/publish/install_pgpro_1c.sh`
 
 #### 2\. Сделайте скрипт исполняемым:  
 
@@ -179,7 +179,10 @@ _Для production использования рекомендуется пре�
 
   
 
-`=== Устанавливается PostgreSQL Pro 1C версии 16 === 📁 Каталог данных: /data/postgres/ ✅ PostgreSQL Pro 1C версии 16 успешно установлена! 📦 Данные расположены в: /data/postgres/`
+`=== Устанавливается PostgreSQL Pro 1C версии 16 === `
+`📁 Каталог данных: /data/postgres/ `
+`✅ PostgreSQL Pro 1C версии 16 успешно установлена! `
+`📦 Данные расположены в: /data/postgres/`
 
 * * *
 
