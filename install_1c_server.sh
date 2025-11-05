@@ -134,7 +134,14 @@ echo "📦 Скачиваю последнюю версию 1С..."
 ARCHIVE_NAME="1c_server_$(date +%Y%m%d_%H%M%S).zip"
 ARCHIVE_PATH="$ARCHIVE_STORAGE/$ARCHIVE_NAME"
 
-wget -q -O "$ARCHIVE_PATH" "$DOWNLOAD_URL"
+# Проверяем наличие wget с поддержкой прогресса
+if wget --help | grep -q "show-progress"; then
+    echo "⏳ Скачивание архива (с прогресс-баром)..."
+    wget --show-progress -O "$ARCHIVE_PATH" "$DOWNLOAD_URL"
+else
+    echo "⏳ Скачивание архива..."
+    wget -O "$ARCHIVE_PATH" "$DOWNLOAD_URL"
+fi
 
 # Проверяем, что архив скачался
 if [ ! -f "$ARCHIVE_PATH" ]; then
@@ -142,7 +149,7 @@ if [ ! -f "$ARCHIVE_PATH" ]; then
     exit 1
 fi
 
-echo "✅ Архив сохранен: $ARCHIVE_PATH"
+echo "✅ Архив успешно скачан: $ARCHIVE_PATH"
 echo "📏 Размер архива: $(du -h "$ARCHIVE_PATH" | cut -f1)"
 
 # === Анализ содержимого архива ===
