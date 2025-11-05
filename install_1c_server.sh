@@ -1,6 +1,4 @@
 #!/bin/bash
-# Copyright (c) 2025 Sergey Shestopalov
-
 set -e
 
 # === Настройки ===
@@ -68,10 +66,14 @@ if [ "$IS_FIRST_INSTALL" = true ] || [ "$FORCE_SETUP" = true ]; then
     echo "🔧 Выполняю первоначальную настройку системы..."
     
     # === Обновление системы ===
-    sudo apt update && sudo apt upgrade -y
+    echo "🔄 Обновление списка пакетов..."
+    sudo apt-get update
+    echo "🔄 Обновление установленных пакетов..."
+    sudo apt-get upgrade -y
 
     # === Установка локали ===
-    sudo apt -y install locales
+    echo "🌐 Установка локалей..."
+    sudo apt-get install -y locales
     sudo locale-gen en_US.UTF-8 ru_RU.UTF-8
     sudo update-locale LANG=ru_RU.UTF-8
 
@@ -120,7 +122,8 @@ if [ "$IS_FIRST_INSTALL" = true ] || [ "$FORCE_SETUP" = true ]; then
     echo msttcorefonts msttcorefonts/accepted-mscorefonts-eula select true | sudo debconf-set-selections
 
     # === Установка зависимостей ===
-    sudo apt -y install ttf-mscorefonts-installer imagemagick unixodbc libgsf-bin t1utils unzip wget
+    echo "📦 Установка зависимостей..."
+    sudo apt-get install -y ttf-mscorefonts-installer imagemagick unixodbc libgsf-bin t1utils unzip wget
 
 else
     echo "🔧 Пропускаю настройку системы (уже установлена 1С)"
