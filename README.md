@@ -15,26 +15,26 @@
 
 ## 🚀 Быстрый старт
 
-```bash
+
 # Скачать и запустить
-wget -O install_1c.sh https://example.com/install_1c.sh
-chmod +x install_1c.sh
-sudo ./install_1c.sh
+`wget -O install_1c.sh https://example.com/install_1c.sh`
+`chmod +x install_1c.sh`
+`sudo ./install_1c.sh`
 
 ⚙️ Параметры
 ------------
-```bash
+
 # Базовая установка/обновление
-sudo ./install_1c.sh
+`sudo ./install_1c.sh`
 
 # С указанием часового пояса
-sudo ./install_1c.sh --timezone=Asia/Irkutsk
+`sudo ./install_1c.sh --timezone=Asia/Irkutsk`
 
 # Сохранить архив
-sudo ./install_1c.sh --keep-archive
+`sudo ./install_1c.sh --keep-archive`
 
 # Принудительная настройка
-sudo ./install_1c.sh --force-setup
+`sudo ./install_1c.sh --force-setup`
 
 📁 Структура
 ------------
