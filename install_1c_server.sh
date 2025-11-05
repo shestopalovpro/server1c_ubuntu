@@ -135,33 +135,81 @@ ARCHIVE_PATH="$ARCHIVE_STORAGE/$ARCHIVE_NAME"
 wget -q -O "$ARCHIVE_PATH" "$DOWNLOAD_URL"
 echo "✅ Архив сохранен: $ARCHIVE_PATH"
 
-# === Определяем версию из архива ===
+# === Анализ содержимого архива ===
 echo "🔍 Анализ содержимого архива..."
-DEB_FILES=$(unzip -l "$ARCHIVE_PATH" | grep -oE "1c-enterprise[^.]*\.deb" | head -3)
+
+# Создаем временную папку для анализа
+TEMP_ANALYSIS="$WORKDIR/analysis_$$"
+mkdir -p "$TEMP_ANALYSIS"
+
+# Распаковываем архив для анализа
+unzip -q -l "$ARCHIVE_PATH" > "$TEMP_ANALYSIS/archive_contents.txt"
+
+# Ищем DEB пакеты разными способами
+echo "📋 Содержимое архива:"
+cat "$TEMP_ANALYSIS/archive_contents.txt"
+
+# Ищем файлы с расширением .deb
+DEB_FILES=$(grep -E "\.deb$" "$TEMP_ANALYSIS/archive_contents.txt" | awk '{print $4}' | grep -v "^$")
 
 if [ -z "$DEB_FILES" ]; then
-    echo "❌ Не удалось найти DEB пакеты в архиве"
-    exit 1
+    echo "⚠️  Не удалось найти DEB пакеты через анализ списка, пробую альтернативный метод..."
+    # Альтернативный метод - распаковываем и ищем файлы
+    unzip -q "$ARCHIVE_PATH" -d "$TEMP_ANALYSIS/extracted"
+    DEB_FILES=$(find "$TEMP_ANALYSIS/extracted" -name "*.deb" -type f | head -5)
+    
+    if [ -z "$DEB_FILES" ]; then
+        echo "❌ Не удалось найти DEB пакеты в архиве после распаковки"
+        echo "📁 Содержимое распакованной папки:"
+        ls -la "$TEMP_ANALYSIS/extracted"
+        rm -rf "$TEMP_ANALYSIS"
+        exit 1
+    else
+        echo "✅ Найдены DEB пакеты через распаковку:"
+        echo "$DEB_FILES" | while read line; do
+            echo "   - $(basename "$line")"
+        done
+    fi
+else
+    echo "✅ Найдены DEB пакеты в архиве:"
+    echo "$DEB_FILES" | while read line; do
+        echo "   - $line"
+    done
 fi
 
 # Берем первый DEB файл для определения версии
 FIRST_DEB=$(echo "$DEB_FILES" | head -1)
-echo "📋 Найдены пакеты:"
-echo "$DEB_FILES" | while read line; do echo "   - $line"; done
+# Извлекаем только имя файла если это полный путь
+DEB_FILENAME=$(basename "$FIRST_DEB")
 
 # Извлекаем версию из имени файла
-NEW_VERSION=$(echo "$FIRST_DEB" | grep -oE '[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+' | head -1)
+echo "🔍 Извлекаю версию из файла: $DEB_FILENAME"
+
+# Пробуем разные шаблоны для извлечения версии
+NEW_VERSION=$(echo "$DEB_FILENAME" | grep -oE '[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+' | head -1)
+
 if [ -z "$NEW_VERSION" ]; then
     # Альтернативный вариант извлечения версии
-    NEW_VERSION=$(echo "$FIRST_DEB" | sed -E 's/.*enterprise-[^-]*-([0-9._]+)-.*/\1/' | tr '_' '.')
+    NEW_VERSION=$(echo "$DEB_FILENAME" | sed -E 's/.*([0-9]+[.][0-9]+[.][0-9]+[.][0-9]+).*/\1/' | head -1)
 fi
 
 if [ -z "$NEW_VERSION" ]; then
-    echo "❌ Не удалось определить версию из файла: $FIRST_DEB"
+    # Еще один вариант для формата 8.3.27-1786
+    NEW_VERSION=$(echo "$DEB_FILENAME" | sed -E 's/.*([0-9]+[.][0-9]+[.][0-9]+)-([0-9]+).*/\1.\2/' | head -1)
+fi
+
+if [ -z "$NEW_VERSION" ]; then
+    echo "❌ Не удалось определить версию из файла: $DEB_FILENAME"
+    echo "📋 Все найденные файлы:"
+    echo "$DEB_FILES"
+    rm -rf "$TEMP_ANALYSIS"
     exit 1
 fi
 
 echo "🔍 Найдена версия для установки: $NEW_VERSION"
+
+# Очищаем временную папку анализа
+rm -rf "$TEMP_ANALYSIS"
 
 # === Функция сравнения версий ===
 vercmp() {
@@ -199,11 +247,11 @@ else
     echo "⬇️  Будет установлена новая версия: $NEW_VERSION (старше чем $CURRENT_VERSION)"
 fi
 
-# === Распаковываем архив ===
-echo "📦 Распаковка архива..."
+# === Распаковываем архив для установки ===
+echo "📦 Распаковка архива для установки..."
 TEMP_EXTRACT="$WORKDIR/extract_$$"
 mkdir -p "$TEMP_EXTRACT"
-unzip -o "$ARCHIVE_PATH" -d "$TEMP_EXTRACT"
+unzip -q -o "$ARCHIVE_PATH" -d "$TEMP_EXTRACT"
 
 # === Сохраняем пакеты в постоянное хранилище ===
 PACKAGE_VERSION_DIR="$PACKAGE_STORAGE/$NEW_VERSION"
@@ -220,6 +268,8 @@ DEB_PACKAGES=$(find . -name "*.deb" -type f)
 
 if [ -z "$DEB_PACKAGES" ]; then
     echo "❌ Не найдены DEB пакеты после распаковки"
+    echo "📁 Содержимое папки:"
+    ls -la
     exit 1
 fi
 
