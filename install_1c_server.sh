@@ -79,6 +79,7 @@ fi
 
 # === Логирование ===
 mkdir -p "$(dirname "$LOGFILE")"
+exec 3>&1   # исходный терминал: сюда рисуется прогресс-бар, минуя журнал
 exec > >(tee -a "$LOGFILE") 2>&1
 
 echo "🚀 Установка/обновление сервера 1С:Предприятие"
@@ -222,10 +223,21 @@ echo
 echo "⬇️  Скачиваю последнюю версию 1С $BRANCH..."
 ARCHIVE_PATH="$ARCHIVE_STORAGE/latest_${BRANCH//./}_$(date +%Y%m%d_%H%M%S).zip"
 
-if wget --help | grep -q "show-progress"; then
-    wget -q --show-progress -O "$ARCHIVE_PATH" "$DOWNLOAD_URL"
+# Вывод идёт через tee в журнал, поэтому wget не видит терминал и печатает
+# каждое обновление прогресса новой строкой. Если скрипт запущен в терминале,
+# рисуем однострочный прогресс-бар (0–100%) прямо в него, мимо журнала.
+# Без терминала (cron, перенаправление в файл) скачиваем молча.
+if [ -t 3 ]; then
+    WGET_PROGRESS=(--show-progress --progress=bar:force:noscroll)
 else
-    wget -O "$ARCHIVE_PATH" "$DOWNLOAD_URL"
+    WGET_PROGRESS=()
+fi
+
+if ! wget -q "${WGET_PROGRESS[@]}" -O "$ARCHIVE_PATH" "$DOWNLOAD_URL" 2>&3; then
+    echo "❌ Не удалось скачать $DOWNLOAD_URL"
+    echo "   Проверьте доступ в интернет: wget --spider $DOWNLOAD_URL"
+    rm -f "$ARCHIVE_PATH"
+    exit 1
 fi
 
 if [ ! -s "$ARCHIVE_PATH" ]; then
