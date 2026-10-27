@@ -1,83 +1,177 @@
 #!/bin/bash
+# Copyright (c) 2025 Sergey Shestopalov
+#
+# Установка и обновление сервера 1С:Предприятие (8.3 или 8.5) на Ubuntu/Debian.
+#
+# Что делает скрипт:
+#   1. Спрашивает, какую платформу ставить: 8.3 или 8.5 (или берёт из --version).
+#   2. При первой установке (или с --force-setup) готовит систему:
+#      обновление пакетов, локали ru_RU.UTF-8, часовой пояс, шрифты и зависимости.
+#   3. Скачивает последний дистрибутив выбранной ветки с сервера
+#      (latest_83.zip или latest_85.zip), определяет по DEB-пакетам его версию.
+#   4. Сравнивает с уже установленной версией той же ветки и обновляет,
+#      только если скачанная версия новее.
+#   5. Устанавливает пакеты, регистрирует и запускает службу srv1cv8 в systemd.
+#      Службы других установленных версий 1С останавливаются, чтобы не было
+#      конфликта портов (1540/1541/1560-1591).
+
 set -e
 
 # === Настройки ===
-DOWNLOAD_URL="https://f1.atoldriver.ru/1c/latest.zip"
-WORKDIR="/opt/install-1c"
-LOGFILE="/var/log/1c_install.log"
-ARCHIVE_STORAGE="/opt/1c-archives"  # Папка для хранения архивов
-PACKAGE_STORAGE="/opt/1c-packages"  # Папка для хранения распакованных пакетов
+DOWNLOAD_BASE_URL="https://f1.atoldriver.ru/1c"   # Сервер с дистрибутивами
+WORKDIR="/opt/install-1c"                         # Временная рабочая папка
+LOGFILE="/var/log/1c_install.log"                 # Журнал установки
+ARCHIVE_STORAGE="/opt/1c-archives"                # Хранилище скачанных архивов
+PACKAGE_STORAGE="/opt/1c-packages"                # Хранилище распакованных DEB-пакетов
+INSTALL_ROOT="/opt/1cv8/x86_64"                   # Куда 1С ставит версии платформы
+
+# === Справка ===
+show_help() {
+    cat <<EOF
+Использование: sudo $0 [параметры]
+
+Параметры:
+  --version=8.3|8.5    Ветка платформы 1С. Без параметра скрипт спросит интерактивно.
+                         8.3 — скачивается ${DOWNLOAD_BASE_URL}/latest_83.zip
+                         8.5 — скачивается ${DOWNLOAD_BASE_URL}/latest_85.zip
+  --timezone=<zone>    Часовой пояс при первичной настройке (пример: Asia/Irkutsk).
+                       Без параметра будет предложен выбор из списка.
+  --keep-archive       Не удалять скачанный zip-архив после установки
+                       (DEB-пакеты сохраняются всегда).
+  --force-setup        Выполнить первичную настройку системы, даже если 1С уже стоит.
+  -y, --yes            Не задавать подтверждающих вопросов (смена ветки 8.3 <-> 8.5).
+  -h, --help           Показать эту справку.
+
+Примеры:
+  sudo $0                                 # интерактивный выбор версии
+  sudo $0 --version=8.3                   # установить/обновить последнюю 8.3
+  sudo $0 --version=8.5 --timezone=Europe/Moscow --keep-archive
+EOF
+}
+
+# === Парсинг аргументов ===
+BRANCH=""
+TIMEZONE_PARAM=""
+KEEP_ARCHIVE=false
+FORCE_SETUP=false
+ASSUME_YES=false
+for arg in "$@"; do
+    case $arg in
+        --version=*)    BRANCH="${arg#*=}" ;;
+        --timezone=*)   TIMEZONE_PARAM="${arg#*=}" ;;
+        --keep-archive) KEEP_ARCHIVE=true ;;
+        --force-setup)  FORCE_SETUP=true ;;
+        -y|--yes)       ASSUME_YES=true ;;
+        -h|--help)      show_help; exit 0 ;;
+        *)
+            echo "❌ Неизвестный параметр: $arg"
+            echo "ℹ️  Справка: $0 --help"
+            exit 1
+            ;;
+    esac
+done
+
+# === Проверка прав ===
+if [ "$EUID" -ne 0 ]; then
+    echo "❌ Скрипт нужно запускать от root: sudo $0 $*"
+    exit 1
+fi
 
 # === Логирование ===
 mkdir -p "$(dirname "$LOGFILE")"
 exec > >(tee -a "$LOGFILE") 2>&1
 
-# === Парсинг аргументов ===
-TIMEZONE_PARAM=""
-KEEP_ARCHIVE=false
-FORCE_SETUP=false
-for arg in "$@"; do
-    case $arg in
-        --timezone=*)
-            TIMEZONE_PARAM="${arg#*=}"
-            ;;
-        --keep-archive)
-            KEEP_ARCHIVE=true
-            ;;
-        --force-setup)
-            FORCE_SETUP=true
-            ;;
-        -h|--help)
-            echo "Использование: $0 [--timezone=<zone>] [--keep-archive] [--force-setup]"
-            echo "  --timezone=<zone>    Установка часового пояса (пример: Asia/Irkutsk)"
-            echo "  --keep-archive       Сохранить скачанный архив и пакеты"
-            echo "  --force-setup        Принудительно выполнить настройку системы"
-            echo "  -h, --help          Показать эту справку"
-            exit 0
-            ;;
-    esac
-done
+echo "🚀 Установка/обновление сервера 1С:Предприятие"
+echo "📄 Журнал: $LOGFILE"
+echo
 
-echo "🚀 Запуск установки/обновления 1С сервера"
-echo "📄 Лог: $LOGFILE"
+# === Выбор ветки платформы ===
+if [ -z "$BRANCH" ]; then
+    echo "Какую платформу 1С установить?"
+    PS3="Введите номер варианта: "
+    options=(
+        "8.3 — последняя версия 8.3 с сервера (latest_83.zip)"
+        "8.5 — последняя версия 8.5 с сервера (latest_85.zip)"
+    )
+    select opt in "${options[@]}"; do
+        case $REPLY in
+            1) BRANCH="8.3"; break ;;
+            2) BRANCH="8.5"; break ;;
+            *) echo "❌ Неверный выбор, введите 1 или 2." ;;
+        esac
+    done
+fi
+
+case "$BRANCH" in
+    8.3|83) BRANCH="8.3" ;;
+    8.5|85) BRANCH="8.5" ;;
+    *)
+        echo "❌ Неподдерживаемая версия: $BRANCH (допустимо 8.3 или 8.5)"
+        exit 1
+        ;;
+esac
+
+DOWNLOAD_URL="$DOWNLOAD_BASE_URL/latest_${BRANCH//./}.zip"
+
+echo "🎯 Выбрана платформа: $BRANCH"
+echo "🌐 Источник дистрибутива: $DOWNLOAD_URL"
 echo "💾 Хранилище архивов: $ARCHIVE_STORAGE"
 echo "📦 Хранилище пакетов: $PACKAGE_STORAGE"
 echo
 
-# === Создание папок для хранения (всегда) ===
-echo "📁 Создаю папки для хранения..."
-sudo mkdir -p "$ARCHIVE_STORAGE" "$PACKAGE_STORAGE"
-sudo chown -R $USER:$USER "$ARCHIVE_STORAGE" "$PACKAGE_STORAGE"
+mkdir -p "$ARCHIVE_STORAGE" "$PACKAGE_STORAGE" "$WORKDIR"
 
-# === Проверяем, установлена ли 1С ===
-IS_FIRST_INSTALL=false
-if [ -d /opt/1cv8/x86_64 ]; then
-    CURRENT_VERSION=$(ls /opt/1cv8/x86_64 | sort -V | tail -n1)
-    echo "💡 Текущая установленная версия: $CURRENT_VERSION"
-    IS_FIRST_INSTALL=false
-else
-    CURRENT_VERSION="0.0.0.0"
-    echo "ℹ️  1С не установлена, будет выполнена чистая установка."
+# === Что уже установлено ===
+# Все версии платформы в /opt/1cv8/x86_64 (вида 8.3.27.1786), по возрастанию
+INSTALLED_VERSIONS=$(ls "$INSTALL_ROOT" 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -V || true)
+
+if [ -z "$INSTALLED_VERSIONS" ]; then
     IS_FIRST_INSTALL=true
+    echo "ℹ️  1С на сервере не найдена — будет выполнена чистая установка."
+else
+    IS_FIRST_INSTALL=false
+    echo "💡 Установленные версии платформы:"
+    echo "$INSTALLED_VERSIONS" | sed 's/^/     - /'
 fi
 
-# === Настройка системы только при первой установке или принудительно ===
+# Последняя установленная версия выбранной ветки (пусто, если ветки ещё нет)
+CURRENT_VERSION=$(echo "$INSTALLED_VERSIONS" | grep -E "^${BRANCH//./\\.}\." | tail -n1 || true)
+# Версии других веток (например, 8.3 при установке 8.5)
+OTHER_BRANCH_VERSIONS=$(echo "$INSTALLED_VERSIONS" | grep -vE "^${BRANCH//./\\.}\." | grep -v '^$' || true)
+
+if [ -n "$CURRENT_VERSION" ]; then
+    echo "💡 Текущая версия ветки $BRANCH: $CURRENT_VERSION"
+elif [ "$IS_FIRST_INSTALL" = false ]; then
+    echo "ℹ️  Ветка $BRANCH ещё не установлена — будет добавлена рядом с имеющимися."
+fi
+echo
+
+# === Предупреждение о смене ветки ===
+if [ -z "$CURRENT_VERSION" ] && [ -n "$OTHER_BRANCH_VERSIONS" ] && [ "$ASSUME_YES" = false ]; then
+    echo "⚠️  На сервере уже стоит 1С другой ветки: $(echo $OTHER_BRANCH_VERSIONS)"
+    echo "   После установки $BRANCH её служба будет остановлена и отключена,"
+    echo "   а запущен будет сервер $BRANCH (порты у них общие)."
+    read -rp "Продолжить? (y/N): " CONFIRM
+    case "$CONFIRM" in
+        [yY]|[yY][eE][sS]) ;;
+        *) echo "❌ Операция отменена пользователем."; exit 1 ;;
+    esac
+    echo
+fi
+
+# === Первичная настройка системы (только при первой установке или --force-setup) ===
 if [ "$IS_FIRST_INSTALL" = true ] || [ "$FORCE_SETUP" = true ]; then
-    echo "🔧 Выполняю первоначальную настройку системы..."
-    
-    # === Обновление системы ===
-    echo "🔄 Обновление списка пакетов..."
-    sudo apt-get update
-    echo "🔄 Обновление установленных пакетов..."
-    sudo apt-get upgrade -y
+    echo "🔧 Первичная настройка системы..."
 
-    # === Установка локали ===
-    echo "🌐 Установка локалей..."
-    sudo apt-get install -y locales
-    sudo locale-gen en_US.UTF-8 ru_RU.UTF-8
-    sudo update-locale LANG=ru_RU.UTF-8
+    echo "🔄 Обновление списка пакетов и установленных пакетов..."
+    apt-get update
+    apt-get upgrade -y
 
-    # === Настройка часового пояса ===
+    echo "🌐 Установка локалей ru_RU.UTF-8 и en_US.UTF-8..."
+    apt-get install -y locales
+    locale-gen en_US.UTF-8 ru_RU.UTF-8
+    update-locale LANG=ru_RU.UTF-8
+
     echo "🕒 Настройка часового пояса..."
     CURRENT_TZ=$(timedatectl show -p Timezone --value)
 
@@ -101,291 +195,186 @@ if [ "$IS_FIRST_INSTALL" = true ] || [ "$FORCE_SETUP" = true ]; then
         )
         select opt in "${options[@]}"; do
             case $REPLY in
-                1)
-                    NEW_TZ="$CURRENT_TZ"; break;;
-                2|3|4|5|6|7)
-                    NEW_TZ="$opt"; break;;
-                8)
-                    read -rp "Введите свой часовой пояс (например, Europe/Samara): " NEW_TZ; break;;
-                *)
-                    echo "❌ Неверный выбор, попробуйте снова.";;
+                1) NEW_TZ="$CURRENT_TZ"; break ;;
+                2|3|4|5|6|7) NEW_TZ="$opt"; break ;;
+                8) read -rp "Введите часовой пояс (например, Europe/Samara): " NEW_TZ; break ;;
+                *) echo "❌ Неверный выбор, попробуйте снова." ;;
             esac
         done
     fi
 
-    echo "⏳ Устанавливаю часовой пояс: $NEW_TZ"
-    sudo timedatectl set-timezone "$NEW_TZ"
-    echo "✅ Часовой пояс установлен: $(timedatectl show -p Timezone --value)"
+    timedatectl set-timezone "$NEW_TZ"
+    echo "✅ Часовой пояс: $(timedatectl show -p Timezone --value)"
     echo
 
-    # === Предотвращаем EULA popup ===
-    echo msttcorefonts msttcorefonts/accepted-mscorefonts-eula select true | sudo debconf-set-selections
+    # Автоматически принимаем EULA шрифтов Microsoft, чтобы установка не остановилась на диалоге
+    echo msttcorefonts msttcorefonts/accepted-mscorefonts-eula select true | debconf-set-selections
 
-    # === Установка зависимостей ===
-    echo "📦 Установка зависимостей..."
-    sudo apt-get install -y ttf-mscorefonts-installer imagemagick unixodbc libgsf-bin t1utils unzip wget
-
+    echo "📦 Установка зависимостей 1С (шрифты, imagemagick, unixodbc и др.)..."
+    apt-get install -y ttf-mscorefonts-installer imagemagick unixodbc libgsf-bin t1utils unzip wget
 else
-    echo "🔧 Пропускаю настройку системы (уже установлена 1С)"
-    echo "ℹ️  Для принудительной настройки используйте --force-setup"
+    echo "🔧 Первичная настройка системы пропущена (1С уже установлена)."
+    echo "ℹ️  Чтобы выполнить её повторно, запустите с --force-setup"
 fi
+echo
 
-# === Работаем в рабочей директории ===
-mkdir -p "$WORKDIR"
-cd "$WORKDIR"
+# === Скачивание дистрибутива ===
+echo "⬇️  Скачиваю последнюю версию 1С $BRANCH..."
+ARCHIVE_PATH="$ARCHIVE_STORAGE/latest_${BRANCH//./}_$(date +%Y%m%d_%H%M%S).zip"
 
-# === Скачиваем последнюю версию ===
-echo "📦 Скачиваю последнюю версию 1С..."
-ARCHIVE_NAME="1c_server_$(date +%Y%m%d_%H%M%S).zip"
-ARCHIVE_PATH="$ARCHIVE_STORAGE/$ARCHIVE_NAME"
-
-# Проверяем наличие wget с поддержкой прогресса
 if wget --help | grep -q "show-progress"; then
-    echo "⏳ Скачивание архива (с прогресс-баром)..."
-    wget --show-progress -O "$ARCHIVE_PATH" "$DOWNLOAD_URL"
+    wget -q --show-progress -O "$ARCHIVE_PATH" "$DOWNLOAD_URL"
 else
-    echo "⏳ Скачивание архива..."
     wget -O "$ARCHIVE_PATH" "$DOWNLOAD_URL"
 fi
 
-# Проверяем, что архив скачался
-if [ ! -f "$ARCHIVE_PATH" ]; then
-    echo "❌ Ошибка: архив не скачался или не сохранился в $ARCHIVE_PATH"
+if [ ! -s "$ARCHIVE_PATH" ]; then
+    echo "❌ Архив не скачался или пустой: $ARCHIVE_PATH"
+    rm -f "$ARCHIVE_PATH"
     exit 1
 fi
+echo "✅ Архив скачан: $ARCHIVE_PATH ($(du -h "$ARCHIVE_PATH" | cut -f1))"
 
-echo "✅ Архив успешно скачан: $ARCHIVE_PATH"
-echo "📏 Размер архива: $(du -h "$ARCHIVE_PATH" | cut -f1)"
-
-# === Анализ содержимого архива ===
-echo "🔍 Анализ содержимого архива..."
-
-# Создаем временную папку для анализа
-TEMP_ANALYSIS="$WORKDIR/analysis_$$"
-mkdir -p "$TEMP_ANALYSIS"
-
-# Распаковываем архив для анализа
-unzip -q -l "$ARCHIVE_PATH" > "$TEMP_ANALYSIS/archive_contents.txt"
-
-# Ищем DEB пакеты разными способами
-echo "📋 Содержимое архива:"
-cat "$TEMP_ANALYSIS/archive_contents.txt"
-
-# Ищем файлы с расширением .deb
-DEB_FILES=$(grep -E "\.deb$" "$TEMP_ANALYSIS/archive_contents.txt" | awk '{print $4}' | grep -v "^$")
-
-if [ -z "$DEB_FILES" ]; then
-    echo "⚠️  Не удалось найти DEB пакеты через анализ списка, пробую альтернативный метод..."
-    # Альтернативный метод - распаковываем и ищем файлы
-    unzip -q "$ARCHIVE_PATH" -d "$TEMP_ANALYSIS/extracted"
-    DEB_FILES=$(find "$TEMP_ANALYSIS/extracted" -name "*.deb" -type f | head -5)
-    
-    if [ -z "$DEB_FILES" ]; then
-        echo "❌ Не удалось найти DEB пакеты в архиве после распаковки"
-        echo "📁 Содержимое распакованной папки:"
-        ls -la "$TEMP_ANALYSIS/extracted"
-        rm -rf "$TEMP_ANALYSIS"
-        exit 1
-    else
-        echo "✅ Найдены DEB пакеты через распаковку:"
-        echo "$DEB_FILES" | while read line; do
-            echo "   - $(basename "$line")"
-        done
-    fi
-else
-    echo "✅ Найдены DEB пакеты в архиве:"
-    echo "$DEB_FILES" | while read line; do
-        echo "   - $line"
-    done
-fi
-
-# Берем первый DEB файл для определения версии
-FIRST_DEB=$(echo "$DEB_FILES" | head -1)
-# Извлекаем только имя файла если это полный путь
-DEB_FILENAME=$(basename "$FIRST_DEB")
-
-# Извлекаем версию из имени файла
-echo "🔍 Извлекаю версию из файла: $DEB_FILENAME"
-
-# Пробуем разные шаблоны для извлечения версии
-NEW_VERSION=$(echo "$DEB_FILENAME" | grep -oE '[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+' | head -1)
-
-if [ -z "$NEW_VERSION" ]; then
-    # Альтернативный вариант извлечения версии
-    NEW_VERSION=$(echo "$DEB_FILENAME" | sed -E 's/.*([0-9]+[.][0-9]+[.][0-9]+[.][0-9]+).*/\1/' | head -1)
-fi
-
-if [ -z "$NEW_VERSION" ]; then
-    # Еще один вариант для формата 8.3.27-1786
-    NEW_VERSION=$(echo "$DEB_FILENAME" | sed -E 's/.*([0-9]+[.][0-9]+[.][0-9]+)-([0-9]+).*/\1.\2/' | head -1)
-fi
-
-if [ -z "$NEW_VERSION" ]; then
-    echo "❌ Не удалось определить версию из файла: $DEB_FILENAME"
-    echo "📋 Все найденные файлы:"
-    echo "$DEB_FILES"
-    rm -rf "$TEMP_ANALYSIS"
-    exit 1
-fi
-
-echo "🔍 Найдена версия для установки: $NEW_VERSION"
-
-# Очищаем временную папку анализа
-rm -rf "$TEMP_ANALYSIS"
-
-# === Упрощенное сравнение версий ===
-echo "🔍 Сравниваю версии:"
-echo "   Текущая: $CURRENT_VERSION"
-echo "   Новая:   $NEW_VERSION"
-
-# Если это первая установка, просто продолжаем
-if [ "$IS_FIRST_INSTALL" = true ]; then
-    echo "⬇️  Первая установка, продолжаю..."
-else
-    # Сравниваем версии с помощью sort -V (версионная сортировка)
-    HIGHER_VERSION=$(echo -e "$CURRENT_VERSION\n$NEW_VERSION" | sort -V | tail -n1)
-    
-    if [ "$HIGHER_VERSION" = "$CURRENT_VERSION" ]; then
-        echo "✅ Установлена более новая или такая же версия ($CURRENT_VERSION). Обновление не требуется."
-        # Удаляем временный архив если не требуется сохранять
-        if [ "$KEEP_ARCHIVE" = false ]; then
-            rm -f "$ARCHIVE_PATH"
-        fi
-        exit 0
-    else
-        echo "⬇️  Будет установлена новая версия: $NEW_VERSION (старше чем $CURRENT_VERSION)"
-    fi
-fi
-
-# === Распаковываем архив для установки ===
-echo "📦 Распаковка архива для установки..."
+# === Распаковка и поиск DEB-пакетов ===
 TEMP_EXTRACT="$WORKDIR/extract_$$"
+trap 'rm -rf "$TEMP_EXTRACT"' EXIT
 mkdir -p "$TEMP_EXTRACT"
+
+echo "📦 Распаковка архива..."
 unzip -q -o "$ARCHIVE_PATH" -d "$TEMP_EXTRACT"
 
-# === Сохраняем пакеты в постоянное хранилище ===
-PACKAGE_VERSION_DIR="$PACKAGE_STORAGE/$NEW_VERSION"
-mkdir -p "$PACKAGE_VERSION_DIR"
-
-echo "💾 Сохраняю пакеты в: $PACKAGE_VERSION_DIR"
-cp -r "$TEMP_EXTRACT"/* "$PACKAGE_VERSION_DIR/" 2>/dev/null || true
-
-# === Переходим в папку с пакетами ===
-cd "$TEMP_EXTRACT"
-
-# === Проверяем наличие DEB пакетов ===
-DEB_PACKAGES=$(find . -name "*.deb" -type f)
-
-if [ -z "$DEB_PACKAGES" ]; then
-    echo "❌ Не найдены DEB пакеты после распаковки"
-    echo "📁 Содержимое папки:"
-    ls -la
+DEB_FILES=$(find "$TEMP_EXTRACT" -name "*.deb" -type f | sort)
+if [ -z "$DEB_FILES" ]; then
+    echo "❌ В архиве не найдено DEB-пакетов. Содержимое архива:"
+    find "$TEMP_EXTRACT" -maxdepth 3 | sed "s|$TEMP_EXTRACT|  .|"
     exit 1
 fi
 
-echo "📦 Найдены пакеты для установки:"
-echo "$DEB_PACKAGES" | while read package; do
-    echo "   - $(basename "$package")"
+echo "✅ Найдены пакеты:"
+echo "$DEB_FILES" | xargs -n1 basename | sed 's/^/     - /'
+
+# === Определение версии дистрибутива ===
+# Имя пакета вида 1c-enterprise-8.3.27.1786-common_8.3.27-1786_amd64.deb
+FIRST_DEB=$(basename "$(echo "$DEB_FILES" | head -1)")
+NEW_VERSION=$(echo "$FIRST_DEB" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+if [ -z "$NEW_VERSION" ]; then
+    # Запасной вариант для формата 8.3.27-1786
+    NEW_VERSION=$(echo "$FIRST_DEB" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+-[0-9]+' | head -1 | tr '-' '.' || true)
+fi
+
+if [ -z "$NEW_VERSION" ]; then
+    echo "❌ Не удалось определить версию по имени пакета: $FIRST_DEB"
+    exit 1
+fi
+
+# Защита от перепутанного архива на сервере (например, 8.3 в latest_85.zip)
+if [[ "$NEW_VERSION" != "$BRANCH".* ]]; then
+    echo "❌ В архиве $DOWNLOAD_URL версия $NEW_VERSION, а ожидалась ветка $BRANCH."
+    echo "   Проверьте содержимое архива на сервере."
+    exit 1
+fi
+
+echo "🔍 Версия дистрибутива: $NEW_VERSION"
+
+# Даём архиву понятное имя с номером версии
+FINAL_ARCHIVE_PATH="$ARCHIVE_STORAGE/1c_server_${NEW_VERSION}.zip"
+mv -f "$ARCHIVE_PATH" "$FINAL_ARCHIVE_PATH"
+ARCHIVE_PATH="$FINAL_ARCHIVE_PATH"
+
+# === Нужно ли обновление ===
+if [ -n "$CURRENT_VERSION" ]; then
+    echo "🔍 Сравнение версий ветки $BRANCH: установлена $CURRENT_VERSION, на сервере $NEW_VERSION"
+    HIGHER_VERSION=$(printf '%s\n%s\n' "$CURRENT_VERSION" "$NEW_VERSION" | sort -V | tail -n1)
+    if [ "$HIGHER_VERSION" = "$CURRENT_VERSION" ]; then
+        echo "✅ Установлена актуальная версия ($CURRENT_VERSION). Обновление не требуется."
+        [ "$KEEP_ARCHIVE" = false ] && rm -f "$ARCHIVE_PATH"
+        exit 0
+    fi
+    echo "⬆️  Будет выполнено обновление $CURRENT_VERSION → $NEW_VERSION"
+else
+    echo "⬇️  Будет установлена версия $NEW_VERSION"
+fi
+echo
+
+# === Сохранение пакетов для повторного использования ===
+PACKAGE_VERSION_DIR="$PACKAGE_STORAGE/$NEW_VERSION"
+mkdir -p "$PACKAGE_VERSION_DIR"
+cp -r "$TEMP_EXTRACT"/. "$PACKAGE_VERSION_DIR/"
+echo "💾 Пакеты сохранены в: $PACKAGE_VERSION_DIR"
+
+# === Установка пакетов ===
+# Порядок важен: common → server → ws (и их -nls), затем остальные.
+# apt-get сам доустановит недостающие зависимости из репозиториев.
+echo "⚙️  Установка пакетов 1С $NEW_VERSION..."
+ORDERED_DEBS=()
+for pattern in "*-common_*" "*-common-nls_*" "*-server_*" "*-server-nls_*" "*-ws_*" "*-ws-nls_*"; do
+    while IFS= read -r deb; do
+        [ -n "$deb" ] && ORDERED_DEBS+=("$deb")
+    done < <(find "$TEMP_EXTRACT" -name "$pattern.deb" -type f | sort)
+done
+# Прочие пакеты из архива (если есть), которые не попали в шаблоны выше
+while IFS= read -r deb; do
+    [[ " ${ORDERED_DEBS[*]} " == *" $deb "* ]] || ORDERED_DEBS+=("$deb")
+done <<< "$DEB_FILES"
+
+for deb in "${ORDERED_DEBS[@]}"; do
+    echo "   📦 $(basename "$deb")"
+done
+apt-get install -y "${ORDERED_DEBS[@]}"
+
+# === Остановка служб других версий 1С ===
+# На сервере может работать только один srv1cv8 на стандартных портах
+for unit in $(systemctl list-units --all --plain --no-legend 'srv1cv8*' | awk '{print $1}'); do
+    if [[ "$unit" != *"-$NEW_VERSION@"* ]]; then
+        echo "⏹  Останавливаю и отключаю службу $unit"
+        systemctl stop "$unit" || true
+        systemctl disable "$unit" || true
+    fi
 done
 
-# === Останавливаем старую службу ===
-if [ "$IS_FIRST_INSTALL" = false ] && systemctl list-units --full -all | grep -q "srv1cv8-${CURRENT_VERSION}@default.service"; then
-    echo "⏹ Останавливаю текущую службу 1С..."
-    sudo systemctl stop "srv1cv8-${CURRENT_VERSION}@default.service" || true
-    sudo systemctl disable "srv1cv8-${CURRENT_VERSION}@default.service" || true
+# === Регистрация и запуск службы ===
+SERVICE_PATH=$(find "$INSTALL_ROOT/$NEW_VERSION" -maxdepth 1 -name "srv1cv8*@.service" -type f 2>/dev/null | head -1)
+if [ -z "$SERVICE_PATH" ]; then
+    SERVICE_PATH=$(find /opt/1cv8 -name "srv1cv8*$NEW_VERSION@.service" -type f 2>/dev/null | head -1)
 fi
 
-# === Устанавливаем пакеты в правильном порядке ===
-echo "⚙️  Устанавливаю пакеты 1С версии $NEW_VERSION..."
-
-# Функция для установки пакета по шаблону
-install_package_by_pattern() {
-    local pattern=$1
-    local package=$(find . -name "$pattern" -type f | head -1)
-    if [ -n "$package" ]; then
-        echo "📦 Устанавливаю: $(basename "$package")"
-        sudo dpkg -i "$package"
-        return 0
-    else
-        echo "⚠️  Не найден пакет: $pattern"
-        return 1
-    fi
-}
-
-# Устанавливаем в правильном порядке
-install_package_by_pattern "1c-enterprise*-common_*_amd64.deb"
-install_package_by_pattern "1c-enterprise*-server_*_amd64.deb"
-install_package_by_pattern "1c-enterprise*-ws_*_amd64.deb"
-
-# Устанавливаем остальные пакеты если есть
-OTHER_PACKAGES=$(find . -name "*.deb" -type f ! -name "*common*" ! -name "*server*" ! -name "*ws*")
-if [ -n "$OTHER_PACKAGES" ]; then
-    echo "📦 Устанавливаю дополнительные пакеты:"
-    echo "$OTHER_PACKAGES" | while read package; do
-        echo "   - $(basename "$package")"
-        sudo dpkg -i "$package"
-    done
+if [ -z "$SERVICE_PATH" ]; then
+    echo "❌ Файл службы для версии $NEW_VERSION не найден."
+    echo "ℹ️  Найдите его вручную: find /opt/1cv8 -name 'srv1cv8*.service'"
+    exit 1
 fi
 
-# === Исправляем зависимости если нужно ===
-echo "🔧 Исправление зависимостей..."
-sudo apt-get install -f -y
+SERVICE_TEMPLATE=$(basename "$SERVICE_PATH")      # srv1cv8-8.3.27.1786@.service
+SERVICE_NAME="${SERVICE_TEMPLATE/@/@default}"      # srv1cv8-8.3.27.1786@default.service
 
-# === Настройка службы ===
-SERVICE_PATH="/opt/1cv8/x86_64/$NEW_VERSION/srv1cv8-$NEW_VERSION@.service"
+echo "🔗 Регистрирую службу $SERVICE_NAME ($SERVICE_PATH)"
+systemctl link "$SERVICE_PATH"
+systemctl daemon-reload
+systemctl enable "$SERVICE_NAME"
+systemctl restart "$SERVICE_NAME"
 
-if [ -f "$SERVICE_PATH" ]; then
-    echo "🔗 Настраиваю systemd для новой версии..."
-    sudo systemctl link "$SERVICE_PATH"
-    sudo systemctl enable "srv1cv8-$NEW_VERSION@default.service"
-    sudo systemctl start "srv1cv8-$NEW_VERSION@default.service"
-    echo "✅ 1С сервер версии $NEW_VERSION успешно установлен и запущен!"
+sleep 3
+if systemctl is-active --quiet "$SERVICE_NAME"; then
+    echo "✅ Служба $SERVICE_NAME запущена"
 else
-    echo "❌ Файл службы не найден: $SERVICE_PATH"
-    echo "⚠️  Попытка найти службу автоматически..."
-    FOUND_SERVICE=$(find /opt/1cv8 -name "srv1cv8-$NEW_VERSION@.service" -type f | head -1)
-    if [ -n "$FOUND_SERVICE" ]; then
-        echo "🔍 Найдена служба: $FOUND_SERVICE"
-        sudo systemctl link "$FOUND_SERVICE"
-        sudo systemctl enable "srv1cv8-$NEW_VERSION@default.service"
-        sudo systemctl start "srv1cv8-$NEW_VERSION@default.service"
-        echo "✅ 1С сервер версии $NEW_VERSION успешно установлен и запущен!"
-    else
-        echo "⚠️  Служба не найдена. Проверьте установку вручную."
-        echo "ℹ️  Попробуйте найти службу: find /opt -name \"*srv1cv8*\" -type f"
-    fi
+    echo "⚠️  Служба $SERVICE_NAME не запустилась. Подробности:"
+    echo "     systemctl status $SERVICE_NAME"
+    echo "     journalctl -u $SERVICE_NAME -n 50"
 fi
 
-# === Проверяем статус службы ===
-echo "📊 Проверка статуса службы..."
-if systemctl is-active "srv1cv8-$NEW_VERSION@default.service" >/dev/null 2>&1; then
-    echo "✅ Служба 1С запущена успешно"
-else
-    echo "⚠️  Служба 1С не запущена. Проверьте конфигурацию."
-fi
-
-# === Очистка временных файлов ===
-echo "🧹 Очистка временных файлов..."
-rm -rf "$TEMP_EXTRACT"
-
+# === Уборка ===
 if [ "$KEEP_ARCHIVE" = false ]; then
-    # Удаляем архив, но сохраняем распакованные пакеты
     rm -f "$ARCHIVE_PATH"
-    echo "📁 Архив удален, пакеты сохранены в: $PACKAGE_VERSION_DIR"
+    echo "🧹 Архив удалён (пакеты остаются в $PACKAGE_VERSION_DIR)"
 else
-    echo "💾 Архив и пакеты сохранены:"
-    echo "   Архив: $ARCHIVE_PATH"
-    echo "   Пакеты: $PACKAGE_VERSION_DIR"
+    echo "💾 Архив сохранён: $ARCHIVE_PATH"
 fi
 
-# === Показываем информацию о хранилище ===
-echo ""
-echo "📊 Информация о хранилищах:"
-echo "   Архивы: $ARCHIVE_STORAGE"
-echo "   Пакеты: $PACKAGE_STORAGE"
-if [ -d "$PACKAGE_STORAGE" ]; then
-    echo "   Сохраненные версии пакетов:"
-    ls -la "$PACKAGE_STORAGE" | grep -E "^d" | awk '{print "     - " $9}'
-fi
-
-echo "🎉 Установка завершена успешно!"
+echo
+echo "📊 Итог:"
+echo "   Платформа:          1С:Предприятие $NEW_VERSION"
+echo "   Каталог установки:  $INSTALL_ROOT/$NEW_VERSION"
+echo "   Служба:             $SERVICE_NAME"
+echo "   Сохранённые пакеты: $(ls "$PACKAGE_STORAGE" | sort -V | tr '\n' ' ')"
+echo
+echo "🎉 Установка завершена!"
