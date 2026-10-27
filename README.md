@@ -16,7 +16,7 @@
 ### Быстрый старт
 
 ```bash
-wget -O install_1c.sh https://github.com/shestopalovpro/server1c_ubuntu/releases/download/publish/install_1c_server.sh
+wget -O install_1c.sh https://github.com/shestopalovpro/server1c_ubuntu/releases/latest/download/install_1c_server.sh
 chmod +x install_1c.sh
 sudo ./install_1c.sh
 ```
@@ -133,7 +133,7 @@ sudo apt-get install -y /opt/1c-packages/8.3.27.2342/*.deb
 ### Быстрый старт
 
 ```bash
-wget -O install_pgpro_1c.sh https://github.com/shestopalovpro/server1c_ubuntu/releases/download/publish/install_pgpro_1c.sh
+wget -O install_pgpro_1c.sh https://github.com/shestopalovpro/server1c_ubuntu/releases/latest/download/install_pgpro_1c.sh
 chmod +x install_pgpro_1c.sh
 sudo ./install_pgpro_1c.sh
 ```
