@@ -7,10 +7,10 @@
 #   1. Спрашивает, какую платформу ставить: 8.3 или 8.5 (или берёт из --version).
 #   2. При первой установке (или с --force-setup) готовит систему:
 #      обновление пакетов, локали ru_RU.UTF-8, часовой пояс, шрифты и зависимости.
-#   3. Скачивает последний дистрибутив выбранной ветки с сервера
-#      (latest_83.zip или latest_85.zip), определяет по DEB-пакетам его версию.
-#   4. Сравнивает с уже установленной версией той же ветки и обновляет,
-#      только если скачанная версия новее.
+#   3. Читает с сервера номер последней версии (latest_83.txt / latest_85.txt).
+#      Если такая версия уже установлена — завершает работу, ничего не скачивая.
+#   4. Скачивает дистрибутив выбранной ветки (latest_83.zip / latest_85.zip),
+#      определяет по DEB-пакетам его версию и ещё раз сравнивает с установленной.
 #   5. Устанавливает пакеты, регистрирует и запускает службу srv1cv8 в systemd.
 #      Службы других установленных версий 1С останавливаются, чтобы не было
 #      конфликта портов (1540/1541/1560-1591).
@@ -34,6 +34,8 @@ show_help() {
   --version=8.3|8.5    Ветка платформы 1С. Без параметра скрипт спросит интерактивно.
                          8.3 — скачивается ${DOWNLOAD_BASE_URL}/latest_83.zip
                          8.5 — скачивается ${DOWNLOAD_BASE_URL}/latest_85.zip
+                       Перед скачиванием проверяется latest_83.txt / latest_85.txt:
+                       если эта версия уже установлена, архив не качается.
   --timezone=<zone>    Часовой пояс при первичной настройке (пример: Asia/Irkutsk).
                        Без параметра будет предложен выбор из списка.
   --keep-archive       Не удалять скачанный zip-архив после установки
@@ -113,9 +115,11 @@ case "$BRANCH" in
 esac
 
 DOWNLOAD_URL="$DOWNLOAD_BASE_URL/latest_${BRANCH//./}.zip"
+VERSION_URL="$DOWNLOAD_BASE_URL/latest_${BRANCH//./}.txt"   # номер версии в архиве
 
 echo "🎯 Выбрана платформа: $BRANCH"
 echo "🌐 Источник дистрибутива: $DOWNLOAD_URL"
+echo "🏷️  Файл версии: $VERSION_URL"
 echo "💾 Хранилище архивов: $ARCHIVE_STORAGE"
 echo "📦 Хранилище пакетов: $PACKAGE_STORAGE"
 echo
@@ -219,6 +223,30 @@ else
 fi
 echo
 
+# === Проверка версии на сервере до скачивания ===
+# Рядом с архивом лежит latest_83.txt / latest_85.txt с номером версии
+# (например, 8.3.27.2342). Если такая или более новая версия уже установлена,
+# архив не качаем. Если файла нет или он некорректный — качаем архив как обычно.
+REMOTE_VERSION=$(wget -q -T 15 -t 2 -O - "$VERSION_URL" 2>/dev/null | tr -d '\r' | head -n1 | xargs || true)
+
+if [[ "$REMOTE_VERSION" =~ ^${BRANCH//./\\.}\.[0-9]+\.[0-9]+$ ]]; then
+    echo "🏷️  Последняя версия $BRANCH на сервере: $REMOTE_VERSION"
+    if [ -n "$CURRENT_VERSION" ]; then
+        HIGHER_VERSION=$(printf '%s\n%s\n' "$CURRENT_VERSION" "$REMOTE_VERSION" | sort -V | tail -n1)
+        if [ "$HIGHER_VERSION" = "$CURRENT_VERSION" ]; then
+            echo "✅ Установлена актуальная версия ($CURRENT_VERSION). Скачивание не требуется."
+            exit 0
+        fi
+        echo "⬆️  Доступно обновление $CURRENT_VERSION → $REMOTE_VERSION"
+    fi
+elif [ -n "$REMOTE_VERSION" ]; then
+    echo "⚠️  Некорректное содержимое $VERSION_URL: '$REMOTE_VERSION'. Версию определю по архиву."
+    REMOTE_VERSION=""
+else
+    echo "ℹ️  Файл версии недоступен — версию определю по архиву после скачивания."
+fi
+echo
+
 # === Скачивание дистрибутива ===
 echo "⬇️  Скачиваю последнюю версию 1С $BRANCH..."
 ARCHIVE_PATH="$ARCHIVE_STORAGE/latest_${BRANCH//./}_$(date +%Y%m%d_%H%M%S).zip"
@@ -287,6 +315,10 @@ if [[ "$NEW_VERSION" != "$BRANCH".* ]]; then
 fi
 
 echo "🔍 Версия дистрибутива: $NEW_VERSION"
+if [ -n "$REMOTE_VERSION" ] && [ "$REMOTE_VERSION" != "$NEW_VERSION" ]; then
+    echo "⚠️  В $VERSION_URL указана $REMOTE_VERSION, а в архиве $NEW_VERSION."
+    echo "   Обновите файл версии на сервере. Дальше используется версия из архива."
+fi
 
 # Даём архиву понятное имя с номером версии
 FINAL_ARCHIVE_PATH="$ARCHIVE_STORAGE/1c_server_${NEW_VERSION}.zip"
